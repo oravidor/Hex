@@ -31,8 +31,6 @@ public final class HexBoardView extends View {
 
     private static final float SQRT_THREE = (float) Math.sqrt(3.0);
 
-    private final HexGame game = new HexGame();
-
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint sidePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
