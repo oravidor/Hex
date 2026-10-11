@@ -86,6 +86,17 @@ public final class HexGame {
         return true;
     }
 
+    /** Lists every empty cell while the game is active. */
+    public List<Move> legalMoves() {
+        if (isOver()) return Collections.emptyList();
+
+        List<Move> moves = new ArrayList<>(cells.length - moveCount);
+        for (int i = 0; i < cells.length; i++) {
+            if (cells[i] == EMPTY) moves.add(new Move(i / size, i % size));
+        }
+        return moves;
+    }
+
     /**
      * Detects a win by searching the player's connected stones between both goal edges.
      * <p>TWIN-ID: HEX.WIN_CHECK
