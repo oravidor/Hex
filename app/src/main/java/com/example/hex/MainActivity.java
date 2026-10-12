@@ -1,3 +1,4 @@
+
 package com.example.hex;
 
 import android.os.Bundle;
@@ -29,6 +30,8 @@ public final class MainActivity extends AppCompatActivity {
     private boolean vsAi = true;
     private boolean modelLoading;
     private boolean aiThinking;
+    private boolean hintThinking;
+    private HexGame.Move hintMove;
     // A result belongs only to the board position that requested it.
     private volatile int positionRevision;
     private List<ModelCatalog.Level> computerLevels = Collections.emptyList();
@@ -56,6 +59,7 @@ public final class MainActivity extends AppCompatActivity {
         binding.boardView.setGame(game);
         binding.boardView.setOnCellClickListener(this::onCellClicked);
         binding.restartButton.setOnClickListener(view -> restartGame());
+        binding.hintButton.setOnClickListener(view -> requestMove(true));
         binding.modeGroup.setOnCheckedChangeListener((group, checkedId) -> {
             boolean requestedAi = checkedId == R.id.modeAi;
             if (requestedAi != vsAi) {
@@ -184,43 +188,61 @@ public final class MainActivity extends AppCompatActivity {
         positionChanged();
         render();
     }
-    /** Evaluates a copied position on the background worker. */
-    private void requestComputerMove() {
-        aiThinking = true;
+    /** Runs the same move chooser for a computer turn or a human hint. */
+    private void requestMove(boolean hint) {
+        if (modelLoading || valueModel == null || game.isOver()) return;
+        if (hint) {
+            if (!vsAi || aiThinking || hintThinking || hintMove != null
+                    || game.getCurrentPlayer() != HexGame.RED) return;
+        } else {
+            if (!vsAi || aiThinking || game.getCurrentPlayer() != HexGame.BLUE) return;
+        }
+
+        hintThinking = hint;
+        aiThinking = !hint;
         render();
         int revision = positionRevision;
         HexGame position = game.copy();
         TfliteValueModel model = valueModel;
 
         aiExecutor.execute(() -> {
+            if (revision != positionRevision) return;
             try {
                 HexGame.Move move = new HexAi(model).chooseMove(position);
-                runOnUiThread(() -> finishComputerMove(revision, model, move, false));
+                runOnUiThread(() -> finishMove(revision, hint, move, false));
             } catch (RuntimeException exception) {
-                runOnUiThread(() -> finishComputerMove(revision, model, null, true));
+                runOnUiThread(() -> finishMove(revision, hint, null, true));
             }
         });
     }
-    /** Applies a result only while it still belongs to the displayed board. */
-    private void finishComputerMove(int revision, TfliteValueModel model,
-                                    HexGame.Move move, boolean failed) {
-        if (revision != positionRevision) return;
+
+    /** Applies a computer move or displays a hint if the result is still current. */
+    private void finishMove(int revision, boolean hint, HexGame.Move move, boolean failed) {
+        if (revision != positionRevision || isFinishing() || isDestroyed()) return;
         aiThinking = false;
-        if (failed) {
+        hintThinking = false;
+
+        if (failed || move == null) {
+            TfliteValueModel failedModel = valueModel;
             valueModel = null;
-            // Queue cleanup after inference has finished on the same worker.
-            aiExecutor.execute(model::close);
+            if (failedModel != null) aiExecutor.execute(failedModel::close);
+        } else if (hint) {
+            // A hint is only a display suggestion; it does not change the game.
+            hintMove = move;
         } else {
-            game.play(move.row, move.column);
-            positionChanged();
+            if (game.play(move.row, move.column)) {
+                positionChanged();
+            }
         }
         render();
     }
 
-    /** A changed board makes earlier background results obsolete. */
+    /** Clears hints and invalidates work tied to the previous board position. */
     private void positionChanged() {
         positionRevision++;
         aiThinking = false;
+        hintThinking = false;
+        hintMove = null;
     }
     /**
      * Plays a legal move from a board tap and updates the screen.
@@ -229,22 +251,28 @@ public final class MainActivity extends AppCompatActivity {
      * @param column zero-based column of the tapped cell
      */
     private void onCellClicked(int row, int column) {
+        if (aiThinking || hintThinking || modelLoading || game.isOver()) return;
+        if (vsAi && (valueModel == null || game.getCurrentPlayer() != HexGame.RED)) return;
         if (game.play(row, column)) {
             positionChanged();
             render();
-            if (vsAi && !game.isOver()) requestComputerMove();
+            if (vsAi && !game.isOver()) requestMove(false);
         }
     }
 
     /** Refreshes the visible screen from the current game state. */
     private void render() {
         binding.boardView.setGame(game);
+        binding.boardView.setHintMove(hintMove);
         binding.boardView.setContentDescription(getString(R.string.board_description,
                 game.getSize(), game.getSize()));
         boolean canTap = !aiThinking && !game.isOver()
                 && (!vsAi || (!modelLoading && valueModel != null
                 && game.getCurrentPlayer() == HexGame.RED));
         binding.boardView.setEnabled(canTap);
+        binding.hintButton.setVisibility(vsAi ? View.VISIBLE : View.GONE);
+        binding.hintButton.setEnabled(vsAi && canTap && valueModel != null
+                && !hintThinking && hintMove == null);
         if (!vsAi) {
             binding.modelText.setText(R.string.model_local);
         } else if (selectedLevel == null || valueModel == null && !modelLoading) {
@@ -264,6 +292,11 @@ public final class MainActivity extends AppCompatActivity {
             binding.statusText.setText(R.string.ai_unavailable);
         } else if (aiThinking) {
             binding.statusText.setText(R.string.status_ai_thinking);
+        } else if (hintThinking) {
+            binding.statusText.setText(R.string.hint_thinking);
+        } else if (hintMove != null) {
+            binding.statusText.setText(getString(R.string.hint_ready,
+                    hintMove.row + 1, hintMove.column + 1));
         } else if (vsAi) {
             binding.statusText.setText(R.string.status_your_turn);
         } else {
@@ -276,8 +309,10 @@ public final class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         positionChanged();
         TfliteValueModel model = valueModel;
-        if (model != null) aiExecutor.execute(model::close);
-        aiExecutor.shutdown();
+        if (model != null && aiExecutor != null && !aiExecutor.isShutdown()) {
+            aiExecutor.execute(model::close);
+        }
+        if (aiExecutor != null) aiExecutor.shutdown();
         super.onDestroy();
     }
 

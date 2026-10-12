@@ -27,4 +27,7 @@
     <string name="status_blue_turn">Blue to move</string>
     <string name="status_red_wins">Red wins — top connected to bottom</string>
     <string name="status_blue_wins">Blue wins — left connected to right</string>
+    <string name="hint">Hint</string>
+    <string name="hint_thinking">Finding a move…</string>
+    <string name="hint_ready">Suggested move: row %1$d, column %2$d</string>
 </resources>

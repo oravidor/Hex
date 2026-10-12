@@ -12,20 +12,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
-/**
- * Draws a Hex board on a {@link Canvas}.
- *
- * <p>The view's intended role also includes cell input; game rules stay in a separate class.
- */
+/** Draws a Hex board and reports taps without implementing game rules. */
 public final class HexBoardView extends View {
+
     /** Receives taps that land inside a board cell. */
     public interface OnCellClickListener {
-        /**
-         * Called after the user taps a cell.
-         *
-         * @param row zero-based board row
-         * @param column zero-based board column
-         */
+        /** Called after the user taps a cell. */
         void onCellClick(int row, int column);
     }
 
@@ -37,6 +29,8 @@ public final class HexBoardView extends View {
     private final Path hexPath = new Path();
 
     private HexGame game = new HexGame();
+    /** The suggested move is displayed without changing the game position. */
+    private HexGame.Move hintMove;
     private OnCellClickListener listener;
     private float radius;
     private float startX;
@@ -46,19 +40,16 @@ public final class HexBoardView extends View {
     private final int redColor;
     private final int blueColor;
     private final int lineColor;
+    private final int hintColor;
 
-    /**
-     * Creates a board view inflated from XML.
-     *
-     * @param context Android context used to resolve resources
-     * @param attributes XML attributes supplied by the layout inflater
-     */
+    /** Creates a board view inflated from XML. */
     public HexBoardView(Context context, @Nullable AttributeSet attributes) {
         super(context, attributes);
         emptyColor = ContextCompat.getColor(context, R.color.hex_empty);
         redColor = ContextCompat.getColor(context, R.color.hex_red);
         blueColor = ContextCompat.getColor(context, R.color.hex_blue);
         lineColor = ContextCompat.getColor(context, R.color.hex_line);
+        hintColor = ContextCompat.getColor(context, R.color.hex_hint);
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeJoin(Paint.Join.ROUND);
         sidePaint.setStyle(Paint.Style.STROKE);
@@ -67,22 +58,20 @@ public final class HexBoardView extends View {
         setFocusable(true);
     }
 
-    /**
-     * Sets the game position to render and schedules a redraw.
-     *
-     * @param game game whose current board should be displayed
-     */
+    /** Sets the game position to render and schedules a redraw. */
     public void setGame(HexGame game) {
         this.game = game;
         invalidate();
     }
 
-    /**
-     * Sets the listener notified when the user taps a board cell.
-     *
-     * @param listener listener that receives taps on the board
-     */
-    public void setOnCellClickListener(OnCellClickListener listener) {
+    /** Highlights a suggested move, or clears the highlight when passed null. */
+    public void setHintMove(@Nullable HexGame.Move move) {
+        hintMove = move;
+        invalidate();
+    }
+
+    /** Sets the listener notified when the user taps a board cell. */
+    public void setOnCellClickListener(@Nullable OnCellClickListener listener) {
         this.listener = listener;
     }
 
@@ -96,15 +85,24 @@ public final class HexBoardView extends View {
         strokePaint.setStrokeWidth(dp(1.5f));
         for (int row = 0; row < game.getSize(); row++) {
             for (int column = 0; column < game.getSize(); column++) {
-                float centerX = centerX(row, column);
-                float centerY = centerY(row);
-                makeHexagon(centerX, centerY);
+                float cx = centerX(row, column);
+                float cy = centerY(row);
+                makeHexagon(cx, cy);
                 int cell = game.getCell(row, column);
-                fillPaint.setColor(cell == HexGame.RED
-                        ? redColor : cell == HexGame.BLUE ? blueColor : emptyColor);
+                fillPaint.setColor(cell == HexGame.RED ? redColor
+                        : cell == HexGame.BLUE ? blueColor : emptyColor);
                 fillPaint.setStyle(Paint.Style.FILL);
                 canvas.drawPath(hexPath, fillPaint);
                 canvas.drawPath(hexPath, strokePaint);
+
+                if (cell == HexGame.EMPTY && hintMove != null
+                        && hintMove.row == row && hintMove.column == column) {
+                    strokePaint.setColor(hintColor);
+                    strokePaint.setStrokeWidth(dp(4));
+                    canvas.drawPath(hexPath, strokePaint);
+                    strokePaint.setColor(lineColor);
+                    strokePaint.setStrokeWidth(dp(1.5f));
+                }
             }
         }
     }
@@ -117,15 +115,13 @@ public final class HexBoardView extends View {
         canvas.drawLine(centerX(0, 0), centerY(0) - radius * 1.18f,
                 centerX(0, last), centerY(0) - radius * 1.18f, sidePaint);
         canvas.drawLine(centerX(last, 0), centerY(last) + radius * 1.18f,
-                centerX(last, last),
-                centerY(last) + radius * 1.18f, sidePaint);
+                centerX(last, last), centerY(last) + radius * 1.18f, sidePaint);
 
         sidePaint.setColor(blueColor);
         canvas.drawLine(centerX(0, 0) - radius, centerY(0),
                 centerX(last, 0) - radius, centerY(last), sidePaint);
         canvas.drawLine(centerX(0, last) + radius, centerY(0),
-                centerX(last, last) + radius,
-                centerY(last), sidePaint);
+                centerX(last, last) + radius, centerY(last), sidePaint);
     }
 
     /** Fits and centers the board geometry inside the current view size. */
@@ -152,29 +148,23 @@ public final class HexBoardView extends View {
             double angle = Math.toRadians(-90 + 60 * corner);
             float x = centerX + radius * (float) Math.cos(angle);
             float y = centerY + radius * (float) Math.sin(angle);
-            if (corner == 0) {
-                hexPath.moveTo(x, y);
-            } else {
-                hexPath.lineTo(x, y);
-            }
+            if (corner == 0) hexPath.moveTo(x, y);
+            else hexPath.lineTo(x, y);
         }
         hexPath.close();
     }
 
     @Override
     public boolean onTouchEvent(@NonNull MotionEvent event) {
-        if (!isEnabled()) {
-            return false;
-        }
+        if (!isEnabled()) return false;
         if (event.getAction() == MotionEvent.ACTION_UP) {
             calculateGeometry();
-            // Hexagon interiors do not overlap, so the first containing cell is the tap.
             for (int row = 0; row < game.getSize(); row++) {
                 for (int column = 0; column < game.getSize(); column++) {
                     float dx = event.getX() - centerX(row, column);
                     float dy = event.getY() - centerY(row);
                     if (containsPoint(dx, dy)) {
-                        listener.onCellClick(row, column);
+                        if (listener != null) listener.onCellClick(row, column);
                         performClick();
                         return true;
                     }
@@ -198,7 +188,6 @@ public final class HexBoardView extends View {
         super.performClick();
         return true;
     }
-
 
     private float centerX(int row, int column) {
         return startX + SQRT_THREE * radius * (column + row * 0.5f);

@@ -8,4 +8,5 @@
     <color name="hex_blue">#2374AB</color>
     <color name="hex_line">#324154</color>
     <color name="muted">#667085</color>
+    <color name="hex_hint">#D18B00</color>
 </resources>

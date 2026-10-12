@@ -159,13 +159,29 @@
             android:textColor="@color/hex_blue"
             android:textSize="12sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/restartButton"
-            style="@style/Widget.Material3.Button.TonalButton"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/restart"
-            app:icon="@android:drawable/ic_popup_sync"
-            app:iconGravity="textStart" />
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/hintButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:text="@string/hint" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/restartButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/restart"
+                app:icon="@android:drawable/ic_popup_sync"
+                app:iconGravity="textStart" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>
